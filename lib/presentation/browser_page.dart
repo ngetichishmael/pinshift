@@ -324,6 +324,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: _SignalPill(
+                  onTap: () => Navigator.of(context).maybePop(),
                   simulating: sim.status.simulating,
                   pinLabel:
                       '${sim.pin.latitude.toStringAsFixed(4)}, ${sim.pin.longitude.toStringAsFixed(4)}',
@@ -423,10 +424,15 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
 }
 
 class _SignalPill extends StatelessWidget {
-  const _SignalPill({required this.simulating, required this.pinLabel});
+  const _SignalPill({
+    required this.simulating,
+    required this.pinLabel,
+    required this.onTap,
+  });
 
   final bool simulating;
   final String pinLabel;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -434,35 +440,43 @@ class _SignalPill extends StatelessWidget {
     final color = simulating
         ? const Color(0xFF3DDC84)
         : const Color(0xFFFFB84D);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                simulating
-                    ? 'Mock GPS on  ·  $pinLabel'
-                    : 'Mock GPS off, real location exposed',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: scheme.onSurface),
+    return Material(
+      color: color.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 7, 8, 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  simulating
+                      ? 'Mock GPS on  ·  $pinLabel'
+                      : 'Mock GPS off, real location exposed',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: scheme.onSurface),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
       ),
     );

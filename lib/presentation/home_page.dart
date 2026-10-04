@@ -41,6 +41,15 @@ class _HomePageState extends ConsumerState<HomePage> {
         return;
       }
       _mapController.move(pin.latLng, 13);
+      // Keep the pin centred in the map area left visible above the sheet.
+      final camera = _mapController.camera;
+      final lift = MediaQuery.sizeOf(context).height * _sheetExtent.value / 2;
+      _mapController.move(
+        camera.screenOffsetToLatLng(
+          camera.latLngToScreenOffset(pin.latLng) + Offset(0, lift),
+        ),
+        13,
+      );
     });
   }
 
@@ -440,7 +449,7 @@ class _ControlSheet extends StatelessWidget {
 
     return DraggableScrollableSheet(
       initialChildSize: controlSheetInitialExtent,
-      minChildSize: 0.3,
+      minChildSize: 0.33,
       maxChildSize: 0.62,
       snap: true,
       snapSizes: const [controlSheetInitialExtent, 0.62],
@@ -539,33 +548,40 @@ class _ControlSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Text(
-                      'Accuracy jitter',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
                     Row(
                       children: [
-                        Expanded(
-                          child: Slider(
-                            min: 0,
-                            max: 30,
-                            divisions: 30,
-                            label: '${state.jitterMeters.round()} m',
-                            value: state.jitterMeters.clamp(0, 30),
-                            onChanged: controller.setJitter,
+                        Text(
+                          'Accuracy jitter',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
-                        SizedBox(
-                          width: 48,
-                          child: Text(
-                            '${state.jitterMeters.round()} m',
-                            textAlign: TextAlign.end,
-                            style: theme.textTheme.titleSmall,
+                        const Spacer(),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            child: Text(
+                              '±${state.jitterMeters.round()} m',
+                              style: theme.textTheme.labelLarge,
+                            ),
                           ),
                         ),
                       ],
+                    ),
+                    Slider(
+                      min: 0,
+                      max: 30,
+                      divisions: 30,
+                      label: '${state.jitterMeters.round()} m',
+                      value: state.jitterMeters.clamp(0, 30),
+                      onChanged: controller.setJitter,
                     ),
                     const SizedBox(height: 8),
                     Material(

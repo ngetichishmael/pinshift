@@ -119,6 +119,18 @@ String _fillScript(String username, String password) =>
 })(${jsonEncode(username)}, ${jsonEncode(password)});
 ''';
 
+/// Compares addresses ignoring the fragment and a trailing slash.
+String _documentKey(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) {
+    return url;
+  }
+  final path = uri.path.endsWith('/') && uri.path.length > 1
+      ? uri.path.substring(0, uri.path.length - 1)
+      : uri.path;
+  return uri.replace(path: path, fragment: '').toString();
+}
+
 class BrowserPage extends ConsumerStatefulWidget {
   const BrowserPage({super.key});
 
@@ -138,6 +150,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
   var _hasPage = false;
   var _shortcutsOpen = true;
   String? _title;
+  final _documentUrls = <String>{};
   String? _httpHint;
   Map<String, dynamic> _probe = {};
   Completer<PageCredentials?>? _capture;
@@ -207,6 +220,9 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
     await _web.setNavigationDelegate(
       NavigationDelegate(
         onPageStarted: (url) {
+          _documentUrls
+            ..clear()
+            ..add(_documentKey(url));
           setState(() {
             _loading = true;
             _httpHint = null;
@@ -224,9 +240,20 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
             });
           }
         },
+        onUrlChange: (change) {
+          final url = change.url;
+          if (url != null) {
+            _documentUrls.add(_documentKey(url));
+          }
+        },
         onHttpError: (error) {
           final code = error.response?.statusCode;
-          if (code == null) {
+          final uri = error.request?.uri;
+          // Background requests (APIs, images, scripts) fail without the page
+          // failing, so only report errors for the page itself.
+          if (code == null ||
+              uri == null ||
+              !_documentUrls.contains(_documentKey(uri.toString()))) {
             return;
           }
           setState(() {

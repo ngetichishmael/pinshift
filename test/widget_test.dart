@@ -65,6 +65,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
+    await tester.tap(find.textContaining('Setup needed'));
+    await tester.pumpAndSettle();
+
     expect(find.textContaining('GPS only'), findsOneWidget);
     expect(find.text('Start simulation'), findsOneWidget);
   });

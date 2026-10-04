@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pinshift/core/mock_location_status.dart';
 import 'package:pinshift/data/mock_location_platform.dart';
@@ -13,14 +14,24 @@ class MethodChannelMockLocation implements MockLocationPlatform {
   final MethodChannel _methods;
   final EventChannel _events;
 
+  static bool get _supported => defaultTargetPlatform == TargetPlatform.android;
+  static const _unsupportedMessage =
+      'Mock location is only available on Android.';
+
   @override
   Future<MockLocationStatus> getStatus() async {
+    if (!_supported) {
+      return MockLocationStatus.unknown();
+    }
     final raw = await _methods.invokeMapMethod<String, dynamic>('getStatus');
     return MockLocationStatus.fromMap(raw ?? const {});
   }
 
   @override
   Stream<MockLocationStatus> watchStatus() {
+    if (!_supported) {
+      return const Stream.empty();
+    }
     return _events.receiveBroadcastStream().map((event) {
       return MockLocationStatus.fromMap(
         event is Map ? Map<dynamic, dynamic>.from(event) : const {},
@@ -37,6 +48,9 @@ class MethodChannelMockLocation implements MockLocationPlatform {
     bool spoofHardening = false,
     double altitudeMeters = 0.0,
   }) async {
+    if (!_supported) {
+      return MockLocationStatus.unknown().copyWith(error: _unsupportedMessage);
+    }
     try {
       final raw = await _methods.invokeMapMethod<String, dynamic>('start', {
         'latitude': latitude,
@@ -60,17 +74,26 @@ class MethodChannelMockLocation implements MockLocationPlatform {
 
   @override
   Future<MockLocationStatus> stop() async {
+    if (!_supported) {
+      return MockLocationStatus.unknown();
+    }
     final raw = await _methods.invokeMapMethod<String, dynamic>('stop');
     return MockLocationStatus.fromMap(raw ?? const {});
   }
 
   @override
-  Future<void> openDeveloperSettings() {
-    return _methods.invokeMethod<void>('openDeveloperSettings');
+  Future<void> openDeveloperSettings() async {
+    if (!_supported) {
+      return;
+    }
+    await _methods.invokeMethod<void>('openDeveloperSettings');
   }
 
   @override
-  Future<void> openAppSettings() {
-    return _methods.invokeMethod<void>('openAppSettings');
+  Future<void> openAppSettings() async {
+    if (!_supported) {
+      return;
+    }
+    await _methods.invokeMethod<void>('openAppSettings');
   }
 }

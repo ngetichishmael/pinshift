@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pinshift/core/browser_presets.dart';
 import 'package:pinshift/data/pin_store.dart';
+import 'package:pinshift/core/saved_login.dart';
 import 'package:pinshift/presentation/android_webview_config.dart';
+import 'package:pinshift/presentation/logins_sheet.dart';
 import 'package:pinshift/presentation/simulation_controller.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -66,6 +69,56 @@ const _geoScript = '''
 })();
 ''';
 
+const _formFinder = '''
+  const inputs = Array.from(document.querySelectorAll('input'));
+  const visible = (el) =>
+    !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const pw =
+    inputs.find((i) => i.type === 'password' && visible(i) && i.value) ||
+    inputs.find((i) => i.type === 'password' && visible(i));
+  let user = null;
+  if (pw) {
+    for (let k = inputs.indexOf(pw) - 1; k >= 0; k--) {
+      const t = (inputs[k].type || 'text').toLowerCase();
+      if (['text', 'email', 'tel'].includes(t) && visible(inputs[k])) {
+        user = inputs[k];
+        break;
+      }
+    }
+  }
+''';
+
+const _captureScript =
+    '''
+(function() {
+  $_formFinder
+  PinshiftProbe.postMessage(JSON.stringify({
+    capture: { username: user ? user.value : '', password: pw ? pw.value : '' }
+  }));
+})();
+''';
+
+String _fillScript(String username, String password) =>
+    '''
+(function(u, p) {
+  $_formFinder
+  function setValue(el, value) {
+    const setter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(el), 'value').set;
+    setter.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (!pw) {
+    PinshiftProbe.postMessage(JSON.stringify({ fill: 'none' }));
+    return;
+  }
+  if (user && u) setValue(user, u);
+  setValue(pw, p);
+  PinshiftProbe.postMessage(JSON.stringify({ fill: 'ok' }));
+})(${jsonEncode(username)}, ${jsonEncode(password)});
+''';
+
 class BrowserPage extends ConsumerStatefulWidget {
   const BrowserPage({super.key});
 
@@ -87,6 +140,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
   String? _title;
   String? _httpHint;
   Map<String, dynamic> _probe = {};
+  Completer<PageCredentials?>? _capture;
 
   @override
   void initState() {
@@ -116,9 +170,37 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
       onMessageReceived: (message) {
         try {
           final decoded = jsonDecode(message.message);
-          if (decoded is Map<String, dynamic>) {
-            setState(() => _probe = {..._probe, ...decoded});
+          if (decoded is! Map<String, dynamic>) {
+            return;
           }
+          final capture = decoded['capture'];
+          if (capture is Map) {
+            // Credentials never go into _probe, which is shown on screen.
+            _capture?.complete((
+              username: '${capture['username'] ?? ''}',
+              password: '${capture['password'] ?? ''}',
+            ));
+            _capture = null;
+            return;
+          }
+          final fill = decoded['fill'];
+          if (fill is String) {
+            if (mounted) {
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      fill == 'ok'
+                          ? 'Login filled in. Review the page, then sign in.'
+                          : 'No password field found on this page.',
+                    ),
+                  ),
+                );
+            }
+            return;
+          }
+          setState(() => _probe = {..._probe, ...decoded});
         } catch (_) {}
       },
     );
@@ -195,6 +277,36 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
     await _web.loadRequest(uri);
   }
 
+  Future<PageCredentials?> _readLogin() async {
+    _capture?.complete(null);
+    final completer = _capture = Completer<PageCredentials?>();
+    await _web.runJavaScript(_captureScript);
+    return completer.future.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () {
+        _capture = null;
+        return null;
+      },
+    );
+  }
+
+  Future<void> _fillLogin(SavedLogin login) {
+    return _web.runJavaScript(_fillScript(login.username, login.password));
+  }
+
+  void _openLogins() {
+    showLoginsSheet(
+      context,
+      pageHost: parseBrowseUrl(_urlController.text)?.host,
+      onFill: _fillLogin,
+      readFromPage: _readLogin,
+      onOpenSite: (host) {
+        _urlController.text = host;
+        _go(host);
+      },
+    );
+  }
+
   Future<void> _readGeo() async {
     await Permission.location.request();
     await _web.runJavaScript(_geoScript);
@@ -256,6 +368,11 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
                       Icons.bolt,
                       color: _shortcutsOpen ? scheme.primary : null,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Saved logins',
+                    onPressed: _ready ? _openLogins : null,
+                    icon: const Icon(Icons.key_outlined),
                   ),
                   IconButton(
                     tooltip: 'Reload',

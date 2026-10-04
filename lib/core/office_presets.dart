@@ -15,7 +15,7 @@ const shinraiOfficePin = GeoPin(
   label: 'Shinrai office',
 );
 
-const _cityPresets = [
+const cityPresets = [
   GeoPin(latitude: 40.7580,   longitude: -73.9855,  label: 'New York'),
   GeoPin(latitude: 51.5074,   longitude: -0.1278,   label: 'London'),
   GeoPin(latitude: 25.2048,   longitude: 55.2708,   label: 'Dubai'),
@@ -30,4 +30,6 @@ const _cityPresets = [
   GeoPin(latitude: 43.6532,   longitude: -79.3832,  label: 'Toronto'),
 ];
 
-const officePresets = [jubileeOfficePin, shinraiOfficePin, ..._cityPresets];
+const workPresets = [jubileeOfficePin, shinraiOfficePin];
+
+const officePresets = [...workPresets, ...cityPresets];

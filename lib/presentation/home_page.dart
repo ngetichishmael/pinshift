@@ -520,31 +520,25 @@ class _ControlSheet extends StatelessWidget {
                     const SizedBox(height: 14),
                     SizedBox(
                       height: 40,
-                      child: ListView.separated(
+                      child: ListView(
                         scrollDirection: Axis.horizontal,
-                        itemCount: officePresets.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 8),
-                        itemBuilder: (context, i) {
-                          final office = officePresets[i];
-                          final selected =
-                              office.latitude == state.pin.latitude &&
-                              office.longitude == state.pin.longitude;
-                          return ChoiceChip(
-                            avatar: Icon(
-                              Icons.apartment,
-                              size: 16,
-                              color: selected
-                                  ? scheme.onSecondaryContainer
-                                  : scheme.primary,
-                            ),
-                            label: Text(office.label ?? ''),
-                            selected: selected,
-                            showCheckmark: false,
-                            side: BorderSide.none,
-                            backgroundColor: scheme.surfaceContainerHighest,
-                            onSelected: (_) => controller.setPin(office),
-                          );
-                        },
+                        children: [
+                          _PresetGroup(
+                            label: 'Offices',
+                            icon: Icons.apartment,
+                            presets: workPresets,
+                            pin: state.pin,
+                            onSelected: controller.setPin,
+                          ),
+                          const SizedBox(width: 16),
+                          _PresetGroup(
+                            label: 'Cities',
+                            icon: Icons.location_city,
+                            presets: cityPresets,
+                            pin: state.pin,
+                            onSelected: controller.setPin,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -693,6 +687,70 @@ class _ControlSheet extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _PresetGroup extends StatelessWidget {
+  const _PresetGroup({
+    required this.label,
+    required this.icon,
+    required this.presets,
+    required this.pin,
+    required this.onSelected,
+  });
+
+  final String label;
+  final IconData icon;
+  final List<GeoPin> presets;
+  final GeoPin pin;
+  final void Function(GeoPin) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Text(
+          label.toUpperCase(),
+          maxLines: 1,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(width: 8),
+        for (final preset in presets) ...[
+          Builder(
+            builder: (context) {
+              final selected =
+                  preset.latitude == pin.latitude &&
+                  preset.longitude == pin.longitude;
+              return ChoiceChip(
+                avatar: Icon(
+                  icon,
+                  size: 16,
+                  color: selected
+                      ? scheme.onSecondaryContainer
+                      : scheme.primary,
+                ),
+                label: Text(
+                  (preset.label ?? '').replaceFirst(
+                    RegExp(r'\s+office$', caseSensitive: false),
+                    '',
+                  ),
+                ),
+                selected: selected,
+                showCheckmark: false,
+                side: BorderSide.none,
+                backgroundColor: scheme.surfaceContainerHighest,
+                onSelected: (_) => onSelected(preset),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
+      ],
     );
   }
 }

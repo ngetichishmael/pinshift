@@ -131,6 +131,8 @@ Future<void> showPlaceActions(
       state.pin.latitude == place.pin.latitude &&
       state.pin.longitude == place.pin.longitude;
   final messenger = ScaffoldMessenger.of(context);
+  // Sit above the pinned footer (pin summary + start button).
+  final snackBottom = MediaQuery.viewPaddingOf(context).bottom + 140;
 
   return showModalBottomSheet<void>(
     context: context,
@@ -196,6 +198,8 @@ Future<void> showPlaceActions(
                   ..hideCurrentSnackBar()
                   ..showSnackBar(
                     SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.fromLTRB(16, 0, 16, snackBottom),
                       content: Text('Deleted ${place.name}'),
                       action: SnackBarAction(
                         label: 'Undo',

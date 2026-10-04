@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pinshift/core/browser_presets.dart';
@@ -503,23 +504,79 @@ class _SignalsPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final geo = probe['geo'];
-    final geoText = geo is Map
-        ? (geo['error'] != null
-              ? 'error: ${geo['error']}'
-              : '${geo['latitude']}, ${geo['longitude']} ±${geo['accuracy']} m')
-        : null;
-    final rows = <(String, String)>[
-      ('User agent', '${probe['userAgent'] ?? '—'}'),
-      ('webdriver', '${probe['webdriver'] ?? '—'}'),
-      ('window.chrome', '${probe['hasChrome'] ?? '—'}'),
-      (
-        'Timezone',
-        '${probe['timezone'] ?? '—'} (offset ${probe['tzOffsetMinutes'] ?? '—'} min)',
+    final languages = probe['languages'];
+    final ua = probe['userAgent'] as String?;
+    final tz = probe['timezone'];
+
+    final rows = <Widget>[
+      _SignalRow(
+        label: 'User agent',
+        value: Text(
+          ua ?? '—',
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: ua == null
+            ? null
+            : IconButton(
+                tooltip: 'Copy user agent',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.copy, size: 18),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: ua));
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      const SnackBar(content: Text('User agent copied')),
+                    );
+                },
+              ),
       ),
-      ('Languages', '${probe['languages'] ?? '—'}'),
-      ('Geolocation API', '${probe['hasGeolocation'] ?? '—'}'),
-      if (geoText != null) ('Page location', geoText),
+      _SignalRow(
+        label: 'webdriver',
+        value: _FlagBadge(value: probe['webdriver'], warnWhenTrue: true),
+      ),
+      _SignalRow(
+        label: 'window.chrome',
+        value: _FlagBadge(value: probe['hasChrome']),
+      ),
+      _SignalRow(
+        label: 'Geolocation API',
+        value: _FlagBadge(value: probe['hasGeolocation']),
+      ),
+      _SignalRow(
+        label: 'Timezone',
+        value: Text(
+          tz == null
+              ? '—'
+              : '$tz  (UTC offset ${probe['tzOffsetMinutes']} min)',
+          style: theme.textTheme.bodySmall,
+        ),
+      ),
+      _SignalRow(
+        label: 'Languages',
+        value: Text(
+          languages is List && languages.isNotEmpty
+              ? languages.join(', ')
+              : '—',
+          style: theme.textTheme.bodySmall,
+        ),
+      ),
+      if (geo is Map)
+        _SignalRow(
+          label: 'Page location',
+          value: Text(
+            geo['error'] != null
+                ? '${geo['error']}'
+                : '${geo['latitude']}, ${geo['longitude']}  ±${geo['accuracy']} m',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: geo['error'] != null ? scheme.error : null,
+            ),
+          ),
+        ),
     ];
+
     return Material(
       color: scheme.surfaceContainer,
       child: SafeArea(
@@ -544,7 +601,7 @@ class _SignalsPanel extends StatelessWidget {
                             style: theme.textTheme.titleSmall,
                           ),
                           Text(
-                            title ?? 'What this WebView exposes to sites',
+                            title ?? 'What sites can read from this WebView',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -569,41 +626,53 @@ class _SignalsPanel extends StatelessWidget {
               child: expanded
                   ? ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+                        maxHeight: MediaQuery.sizeOf(context).height * 0.45,
                       ),
                       child: ListView(
                         shrinkWrap: true,
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         children: [
-                          for (final r in rows)
+                          if (probe.isEmpty)
                             Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 5),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Text(
+                                'Open a page to read its signals.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            )
+                          else
+                            Material(
+                              color: scheme.surfaceContainerHigh,
+                              borderRadius: BorderRadius.circular(16),
+                              clipBehavior: Clip.antiAlias,
+                              child: Column(
                                 children: [
-                                  SizedBox(
-                                    width: 112,
-                                    child: Text(
-                                      r.$1,
-                                      style: theme.textTheme.labelMedium
-                                          ?.copyWith(
-                                            color: scheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      r.$2,
-                                      maxLines: 4,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                  ),
+                                  for (var i = 0; i < rows.length; i++) ...[
+                                    if (i > 0)
+                                      Divider(
+                                        height: 1,
+                                        indent: 14,
+                                        endIndent: 14,
+                                        color: scheme.outlineVariant.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
+                                    rows[i],
+                                  ],
                                 ],
                               ),
                             ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                           FilledButton.tonalIcon(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(48),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
                             onPressed: onReadGeo,
                             icon: const Icon(Icons.my_location),
                             label: const Text('Read location from this page'),
@@ -614,6 +683,79 @@ class _SignalsPanel extends StatelessWidget {
                   : const SizedBox(width: double.infinity),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SignalRow extends StatelessWidget {
+  const _SignalRow({required this.label, required this.value, this.trailing});
+
+  final String label;
+  final Widget value;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(14, 10, trailing == null ? 14 : 4, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 108,
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Align(alignment: Alignment.centerLeft, child: value),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _FlagBadge extends StatelessWidget {
+  const _FlagBadge({required this.value, this.warnWhenTrue = false});
+
+  final Object? value;
+  final bool warnWhenTrue;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final Color color;
+    final String text;
+    if (value is bool) {
+      final on = value == true;
+      text = on ? 'true' : 'false';
+      color = on == warnWhenTrue
+          ? const Color(0xFFFFB84D)
+          : const Color(0xFF3DDC84);
+    } else {
+      text = '—';
+      color = scheme.onSurfaceVariant;
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Text(
+          text,
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: color),
         ),
       ),
     );

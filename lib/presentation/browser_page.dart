@@ -82,6 +82,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
   var _chromeUa = false;
   var _showProbe = false;
   var _hasPage = false;
+  var _shortcutsOpen = true;
   String? _title;
   String? _httpHint;
   Map<String, dynamic> _probe = {};
@@ -165,7 +166,10 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
     }
     final initial = parseBrowseUrl(_urlController.text);
     if (initial != null) {
-      setState(() => _hasPage = true);
+      setState(() {
+        _hasPage = true;
+        _shortcutsOpen = false;
+      });
       await _web.loadRequest(initial);
     }
   }
@@ -185,6 +189,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
       _probe = {};
       _httpHint = null;
       _hasPage = true;
+      _shortcutsOpen = false;
     });
     await _web.loadRequest(uri);
   }
@@ -219,6 +224,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
                       keyboardType: TextInputType.url,
                       textInputAction: TextInputAction.go,
                       autocorrect: false,
+                      onTap: () => setState(() => _shortcutsOpen = true),
                       decoration: InputDecoration(
                         hintText: 'Enter an address',
                         filled: true,
@@ -242,6 +248,15 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
                     ),
                   ),
                   IconButton(
+                    tooltip: _shortcutsOpen ? 'Hide shortcuts' : 'Shortcuts',
+                    onPressed: () =>
+                        setState(() => _shortcutsOpen = !_shortcutsOpen),
+                    icon: Icon(
+                      Icons.bolt,
+                      color: _shortcutsOpen ? scheme.primary : null,
+                    ),
+                  ),
+                  IconButton(
                     tooltip: 'Reload',
                     onPressed: _ready ? _web.reload : null,
                     icon: const Icon(Icons.refresh),
@@ -249,53 +264,60 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
                 ],
               ),
             ),
-            SizedBox(
-              height: 52,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-                itemCount: browserPresets.length + 1,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, i) {
-                  if (i == 0) {
-                    return FilterChip(
-                      avatar: Icon(
-                        Icons.shield_outlined,
-                        size: 16,
-                        color: _chromeUa
-                            ? scheme.onSecondaryContainer
-                            : scheme.primary,
-                      ),
-                      label: const Text('Chrome UA'),
-                      selected: _chromeUa,
-                      showCheckmark: false,
-                      side: BorderSide.none,
-                      backgroundColor: scheme.surfaceContainerHighest,
-                      onSelected: _ready
-                          ? (value) async {
-                              setState(() => _chromeUa = value);
-                              await _applyUserAgent();
-                              if (_urlController.text.isNotEmpty) {
-                                await _web.reload();
-                              }
-                            }
-                          : null,
-                    );
-                  }
-                  final preset = browserPresets[i - 1];
-                  return ActionChip(
-                    label: Text(preset.label),
-                    side: BorderSide.none,
-                    backgroundColor: scheme.surfaceContainerHighest,
-                    onPressed: _ready
-                        ? () {
-                            _urlController.text = preset.url;
-                            _go(preset.url);
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _shortcutsOpen
+                  ? SizedBox(
+                      height: 52,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                        itemCount: browserPresets.length + 1,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          if (i == 0) {
+                            return FilterChip(
+                              avatar: Icon(
+                                Icons.shield_outlined,
+                                size: 16,
+                                color: _chromeUa
+                                    ? scheme.onSecondaryContainer
+                                    : scheme.primary,
+                              ),
+                              label: const Text('Chrome UA'),
+                              selected: _chromeUa,
+                              showCheckmark: false,
+                              side: BorderSide.none,
+                              backgroundColor: scheme.surfaceContainerHighest,
+                              onSelected: _ready
+                                  ? (value) async {
+                                      setState(() => _chromeUa = value);
+                                      await _applyUserAgent();
+                                      if (_urlController.text.isNotEmpty) {
+                                        await _web.reload();
+                                      }
+                                    }
+                                  : null,
+                            );
                           }
-                        : null,
-                  );
-                },
-              ),
+                          final preset = browserPresets[i - 1];
+                          return ActionChip(
+                            label: Text(preset.label),
+                            side: BorderSide.none,
+                            backgroundColor: scheme.surfaceContainerHighest,
+                            onPressed: _ready
+                                ? () {
+                                    _urlController.text = preset.url;
+                                    _go(preset.url);
+                                  }
+                                : null,
+                          );
+                        },
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),

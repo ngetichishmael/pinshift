@@ -80,7 +80,8 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
   var _ready = false;
   var _loading = false;
   var _chromeUa = false;
-  var _showProbe = true;
+  var _showProbe = false;
+  var _hasPage = false;
   String? _title;
   String? _httpHint;
   Map<String, dynamic> _probe = {};
@@ -164,6 +165,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
     }
     final initial = parseBrowseUrl(_urlController.text);
     if (initial != null) {
+      setState(() => _hasPage = true);
       await _web.loadRequest(initial);
     }
   }
@@ -182,6 +184,7 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
     setState(() {
       _probe = {};
       _httpHint = null;
+      _hasPage = true;
     });
     await _web.loadRequest(uri);
   }
@@ -194,198 +197,388 @@ class _BrowserPageState extends ConsumerState<BrowserPage> {
   @override
   Widget build(BuildContext context) {
     final sim = ref.watch(simulationControllerProvider);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_title ?? 'In-app browser'),
-        actions: [
-          IconButton(
-            tooltip: 'Reload',
-            onPressed: _ready ? _web.reload : null,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: TextField(
-              controller: _urlController,
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.go,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.language),
-                hintText: 'https://…',
-                border: const OutlineInputBorder(),
-                isDense: true,
-                suffixIcon: IconButton(
-                  onPressed: () => _go(_urlController.text),
-                  icon: const Icon(Icons.arrow_forward),
-                ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: _urlController,
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.go,
+                      autocorrect: false,
+                      decoration: InputDecoration(
+                        hintText: 'Enter an address',
+                        filled: true,
+                        fillColor: scheme.surfaceContainerHighest,
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.language, size: 20),
+                        suffixIcon: IconButton(
+                          tooltip: 'Go',
+                          onPressed: () => _go(_urlController.text),
+                          icon: const Icon(Icons.arrow_forward, size: 20),
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
+                      ),
+                      onSubmitted: _go,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Reload',
+                    onPressed: _ready ? _web.reload : null,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
               ),
-              onSubmitted: _go,
             ),
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: Row(
-              children: [
-                for (final preset in browserPresets) ...[
-                  ActionChip(
+            SizedBox(
+              height: 52,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                itemCount: browserPresets.length + 1,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  if (i == 0) {
+                    return FilterChip(
+                      avatar: Icon(
+                        Icons.shield_outlined,
+                        size: 16,
+                        color: _chromeUa
+                            ? scheme.onSecondaryContainer
+                            : scheme.primary,
+                      ),
+                      label: const Text('Chrome UA'),
+                      selected: _chromeUa,
+                      showCheckmark: false,
+                      side: BorderSide.none,
+                      backgroundColor: scheme.surfaceContainerHighest,
+                      onSelected: _ready
+                          ? (value) async {
+                              setState(() => _chromeUa = value);
+                              await _applyUserAgent();
+                              if (_urlController.text.isNotEmpty) {
+                                await _web.reload();
+                              }
+                            }
+                          : null,
+                    );
+                  }
+                  final preset = browserPresets[i - 1];
+                  return ActionChip(
                     label: Text(preset.label),
+                    side: BorderSide.none,
+                    backgroundColor: scheme.surfaceContainerHighest,
                     onPressed: _ready
                         ? () {
                             _urlController.text = preset.url;
                             _go(preset.url);
                           }
                         : null,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                FilterChip(
-                  label: const Text('Chrome UA'),
-                  selected: _chromeUa,
-                  onSelected: _ready
-                      ? (value) async {
-                          setState(() => _chromeUa = value);
-                          await _applyUserAgent();
-                          if (_urlController.text.isNotEmpty) {
-                            await _web.reload();
-                          }
-                        }
-                      : null,
-                ),
-              ],
+                  );
+                },
+              ),
             ),
-          ),
-          if (_loading) const LinearProgressIndicator(minHeight: 2),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: _SignalBanner(
-              simulating: sim.status.simulating,
-              pinLabel:
-                  '${sim.pin.latitude.toStringAsFixed(5)}, ${sim.pin.longitude.toStringAsFixed(5)}',
-              chromeUa: _chromeUa,
-            ),
-          ),
-          if (_httpHint != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  _httpHint!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                child: _SignalPill(
+                  simulating: sim.status.simulating,
+                  pinLabel:
+                      '${sim.pin.latitude.toStringAsFixed(4)}, ${sim.pin.longitude.toStringAsFixed(4)}',
                 ),
               ),
             ),
-          Expanded(
-            child: _ready
-                ? WebViewWidget(controller: _web)
-                : const Center(child: CircularProgressIndicator()),
-          ),
-          Material(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    dense: true,
-                    title: const Text('Client signals'),
-                    subtitle: const Text(
-                      'What this WebView exposes. WAF still sees TLS and app id.',
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(
-                        _showProbe ? Icons.expand_more : Icons.expand_less,
-                      ),
-                      onPressed: () => setState(() => _showProbe = !_showProbe),
+            if (_httpHint != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Material(
+                  color: scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: scheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _httpHint!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  if (_showProbe)
-                    _ProbePanel(probe: _probe, onReadGeo: _readGeo),
-                ],
+                ),
+              ),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_ready)
+                      WebViewWidget(controller: _web)
+                    else
+                      const Center(child: CircularProgressIndicator()),
+                    if (_ready && !_hasPage)
+                      ColoredBox(
+                        color: scheme.surface,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.travel_explore,
+                                size: 48,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Open a site to test your location',
+                                style: theme.textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Type an address or pick a shortcut above.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (_loading)
+                      const Align(
+                        alignment: Alignment.topCenter,
+                        child: LinearProgressIndicator(minHeight: 3),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SignalBanner extends StatelessWidget {
-  const _SignalBanner({
-    required this.simulating,
-    required this.pinLabel,
-    required this.chromeUa,
-  });
-
-  final bool simulating;
-  final String pinLabel;
-  final bool chromeUa;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Text(
-          simulating
-              ? 'Mock GPS is on ($pinLabel). Office clock-in in this WebView should read that pin. IP/session city is unchanged. UA is ${chromeUa ? 'spoofed Chrome' : 'stock WebView'}.'
-              : 'Mock GPS is off — this WebView will send the real device location if a site asks. Start simulation on the map first.',
-          style: Theme.of(context).textTheme.bodySmall,
+            _SignalsPanel(
+              probe: _probe,
+              title: _title,
+              expanded: _showProbe,
+              onToggle: () => setState(() => _showProbe = !_showProbe),
+              onReadGeo: _readGeo,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ProbePanel extends StatelessWidget {
-  const _ProbePanel({required this.probe, required this.onReadGeo});
+class _SignalPill extends StatelessWidget {
+  const _SignalPill({required this.simulating, required this.pinLabel});
+
+  final bool simulating;
+  final String pinLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = simulating
+        ? const Color(0xFF3DDC84)
+        : const Color(0xFFFFB84D);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                simulating
+                    ? 'Mock GPS on  ·  $pinLabel'
+                    : 'Mock GPS off, real location exposed',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: scheme.onSurface),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SignalsPanel extends StatelessWidget {
+  const _SignalsPanel({
+    required this.probe,
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
+    required this.onReadGeo,
+  });
 
   final Map<String, dynamic> probe;
+  final String? title;
+  final bool expanded;
+  final VoidCallback onToggle;
   final VoidCallback onReadGeo;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final geo = probe['geo'];
-    final ua = probe['userAgent'] as String?;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'UA: ${ua ?? '—'}',
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text('webdriver: ${probe['webdriver'] ?? '—'}'),
-          Text('window.chrome: ${probe['hasChrome'] ?? '—'}'),
-          Text(
-            'timezone: ${probe['timezone'] ?? '—'} (offset ${probe['tzOffsetMinutes'] ?? '—'} min)',
-          ),
-          Text('languages: ${probe['languages'] ?? '—'}'),
-          Text('geo API: ${probe['hasGeolocation'] ?? '—'}'),
-          if (geo is Map)
-            Text(
-              geo['error'] != null
-                  ? 'geo error: ${geo['error']}'
-                  : 'geo: ${geo['latitude']}, ${geo['longitude']} ±${geo['accuracy']}m',
+    final geoText = geo is Map
+        ? (geo['error'] != null
+              ? 'error: ${geo['error']}'
+              : '${geo['latitude']}, ${geo['longitude']} ±${geo['accuracy']} m')
+        : null;
+    final rows = <(String, String)>[
+      ('User agent', '${probe['userAgent'] ?? '—'}'),
+      ('webdriver', '${probe['webdriver'] ?? '—'}'),
+      ('window.chrome', '${probe['hasChrome'] ?? '—'}'),
+      (
+        'Timezone',
+        '${probe['timezone'] ?? '—'} (offset ${probe['tzOffsetMinutes'] ?? '—'} min)',
+      ),
+      ('Languages', '${probe['languages'] ?? '—'}'),
+      ('Geolocation API', '${probe['hasGeolocation'] ?? '—'}'),
+      if (geoText != null) ('Page location', geoText),
+    ];
+    return Material(
+      color: scheme.surfaceContainer,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.sensors, size: 20, color: scheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Client signals',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          Text(
+                            title ?? 'What this WebView exposes to sites',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      expanded ? Icons.expand_more : Icons.expand_less,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
             ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: onReadGeo,
-            icon: const Icon(Icons.my_location),
-            label: const Text('Read geolocation from this page'),
-          ),
-        ],
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: expanded
+                  ? ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+                      ),
+                      child: ListView(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        children: [
+                          for (final r in rows)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 5),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: 112,
+                                    child: Text(
+                                      r.$1,
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      r.$2,
+                                      maxLines: 4,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          FilledButton.tonalIcon(
+                            onPressed: onReadGeo,
+                            icon: const Icon(Icons.my_location),
+                            label: const Text('Read location from this page'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
+        ),
       ),
     );
   }

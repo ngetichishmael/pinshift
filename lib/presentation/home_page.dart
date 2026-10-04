@@ -4,9 +4,10 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:pinshift/core/geo_pin.dart';
-import 'package:pinshift/core/office_presets.dart';
+import 'package:pinshift/core/place.dart';
 import 'package:pinshift/core/timezone_check.dart';
 import 'package:pinshift/presentation/browser_page.dart';
+import 'package:pinshift/presentation/place_actions.dart';
 import 'package:pinshift/presentation/simulation_controller.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -446,6 +447,11 @@ class _ControlSheet extends StatelessWidget {
         '${state.pin.latitude.toStringAsFixed(5)}, ${state.pin.longitude.toStringAsFixed(5)}';
     final hasPin = state.pin.latitude != 0 || state.pin.longitude != 0;
     final simulating = state.status.simulating;
+    final isSaved = state.places.any(
+      (p) =>
+          p.pin.latitude == state.pin.latitude &&
+          p.pin.longitude == state.pin.longitude,
+    );
 
     return DraggableScrollableSheet(
       initialChildSize: controlSheetInitialExtent,
@@ -520,26 +526,38 @@ class _ControlSheet extends StatelessWidget {
                     const SizedBox(height: 14),
                     SizedBox(
                       height: 40,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _PresetGroup(
-                            label: 'Offices',
-                            icon: Icons.apartment,
-                            presets: workPresets,
-                            pin: state.pin,
-                            onSelected: controller.setPin,
-                          ),
-                          const SizedBox(width: 16),
-                          _PresetGroup(
-                            label: 'Cities',
-                            icon: Icons.location_city,
-                            presets: cityPresets,
-                            pin: state.pin,
-                            onSelected: controller.setPin,
-                          ),
-                        ],
-                      ),
+                      child: state.places.isEmpty
+                          ? Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'No saved places. Drop a pin, then tap the bookmark below.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            )
+                          : ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                for (final group in PlaceGroup.values)
+                                  if (state.places.any((p) => p.group == group))
+                                    _PresetGroup(
+                                      group: group,
+                                      places: [
+                                        for (final p in state.places)
+                                          if (p.group == group) p,
+                                      ],
+                                      pin: state.pin,
+                                      onSelected: controller.setPin,
+                                      onLongPress: (place) => showPlaceActions(
+                                        context,
+                                        place: place,
+                                        state: state,
+                                        controller: controller,
+                                      ),
+                                    ),
+                              ],
+                            ),
                     ),
                     const SizedBox(height: 20),
                     Row(
@@ -650,6 +668,25 @@ class _ControlSheet extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            IconButton(
+                              tooltip: isSaved
+                                  ? 'Saved place'
+                                  : 'Save as place',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: !hasPin || isSaved
+                                  ? null
+                                  : () => saveCurrentPinAsPlace(
+                                      context,
+                                      state,
+                                      controller,
+                                    ),
+                              icon: Icon(
+                                isSaved
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_add_outlined,
+                                color: isSaved ? scheme.primary : null,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -693,64 +730,73 @@ class _ControlSheet extends StatelessWidget {
 
 class _PresetGroup extends StatelessWidget {
   const _PresetGroup({
-    required this.label,
-    required this.icon,
-    required this.presets,
+    required this.group,
+    required this.places,
     required this.pin,
     required this.onSelected,
+    required this.onLongPress,
   });
 
-  final String label;
-  final IconData icon;
-  final List<GeoPin> presets;
+  final PlaceGroup group;
+  final List<Place> places;
   final GeoPin pin;
   final void Function(GeoPin) onSelected;
+  final void Function(Place) onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Text(
-          label.toUpperCase(),
-          maxLines: 1,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(width: 8),
-        for (final preset in presets) ...[
-          Builder(
-            builder: (context) {
-              final selected =
-                  preset.latitude == pin.latitude &&
-                  preset.longitude == pin.longitude;
-              return ChoiceChip(
-                avatar: Icon(
-                  icon,
-                  size: 16,
-                  color: selected
-                      ? scheme.onSecondaryContainer
-                      : scheme.primary,
-                ),
-                label: Text(
-                  (preset.label ?? '').replaceFirst(
-                    RegExp(r'\s+office$', caseSensitive: false),
-                    '',
-                  ),
-                ),
-                selected: selected,
-                showCheckmark: false,
-                side: BorderSide.none,
-                backgroundColor: scheme.surfaceContainerHighest,
-                onSelected: (_) => onSelected(preset),
-              );
-            },
+    final icon = group == PlaceGroup.offices
+        ? Icons.apartment
+        : Icons.location_city;
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: Row(
+        children: [
+          Text(
+            group.label.toUpperCase(),
+            maxLines: 1,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              letterSpacing: 1.2,
+            ),
           ),
           const SizedBox(width: 8),
+          for (final place in places) ...[
+            Builder(
+              builder: (context) {
+                final selected =
+                    place.pin.latitude == pin.latitude &&
+                    place.pin.longitude == pin.longitude;
+                return GestureDetector(
+                  onLongPress: () => onLongPress(place),
+                  child: ChoiceChip(
+                    avatar: Icon(
+                      icon,
+                      size: 16,
+                      color: selected
+                          ? scheme.onSecondaryContainer
+                          : scheme.primary,
+                    ),
+                    label: Text(
+                      place.name.replaceFirst(
+                        RegExp(r'\s+office$', caseSensitive: false),
+                        '',
+                      ),
+                    ),
+                    selected: selected,
+                    showCheckmark: false,
+                    side: BorderSide.none,
+                    backgroundColor: scheme.surfaceContainerHighest,
+                    onSelected: (_) => onSelected(place.pin),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

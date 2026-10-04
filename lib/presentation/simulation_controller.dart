@@ -7,6 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:pinshift/core/coordinate_parser.dart';
 import 'package:pinshift/core/geo_pin.dart';
 import 'package:pinshift/core/mock_location_status.dart';
+import 'package:pinshift/core/office_presets.dart';
+import 'package:pinshift/core/place.dart';
 import 'package:pinshift/data/mock_location_channel.dart';
 import 'package:pinshift/data/mock_location_platform.dart';
 import 'package:pinshift/data/pin_store.dart';
@@ -28,6 +30,7 @@ class SimulationViewState {
     required this.jitterMeters,
     required this.accuracyMeters,
     required this.status,
+    required this.places,
     this.spoofHardening = false,
     this.busy = false,
     this.searchError,
@@ -37,6 +40,7 @@ class SimulationViewState {
   final double jitterMeters;
   final double accuracyMeters;
   final MockLocationStatus status;
+  final List<Place> places;
   final bool spoofHardening;
   final bool busy;
   final String? searchError;
@@ -46,6 +50,7 @@ class SimulationViewState {
     double? jitterMeters,
     double? accuracyMeters,
     MockLocationStatus? status,
+    List<Place>? places,
     bool? spoofHardening,
     bool? busy,
     String? searchError,
@@ -56,6 +61,7 @@ class SimulationViewState {
       jitterMeters: jitterMeters ?? this.jitterMeters,
       accuracyMeters: accuracyMeters ?? this.accuracyMeters,
       status: status ?? this.status,
+      places: places ?? this.places,
       spoofHardening: spoofHardening ?? this.spoofHardening,
       busy: busy ?? this.busy,
       searchError: clearSearchError ? null : (searchError ?? this.searchError),
@@ -72,11 +78,12 @@ class SimulationController extends Notifier<SimulationViewState> {
       unawaited(_statusSub?.cancel());
     });
     Future<void>.microtask(_hydrate);
-    return const SimulationViewState(
-      pin: GeoPin(latitude: 0, longitude: 0, label: 'Drop a pin'),
+    return SimulationViewState(
+      places: defaultPlaces(),
+      pin: const GeoPin(latitude: 0, longitude: 0, label: 'Drop a pin'),
       jitterMeters: 4,
       accuracyMeters: 5,
-      status: MockLocationStatus(
+      status: const MockLocationStatus(
         developerOptionsEnabled: false,
         mockAppSelected: false,
         locationPermissionGranted: false,
@@ -94,6 +101,7 @@ class SimulationController extends Notifier<SimulationViewState> {
     final jitter = await _store.loadJitter();
     final accuracy = await _store.loadAccuracy();
     final spoofHardening = await _store.loadSpoofHardening();
+    final storedPlaces = await _store.loadPlaces();
     MockLocationStatus status;
     try {
       status = await _platform.getStatus();
@@ -117,6 +125,7 @@ class SimulationController extends Notifier<SimulationViewState> {
       accuracyMeters: accuracy,
       spoofHardening: spoofHardening,
       status: status,
+      places: storedPlaces ?? state.places,
     );
 
     await _statusSub?.cancel();
@@ -143,6 +152,79 @@ class SimulationController extends Notifier<SimulationViewState> {
         ),
       );
     }
+  }
+
+  Future<void> _setPlaces(List<Place> places) async {
+    state = state.copyWith(places: places);
+    await _store.savePlaces(places);
+  }
+
+  Future<void> savePlace(String name, PlaceGroup group) async {
+    final pin = state.pin.copyWith(label: name);
+    state = state.copyWith(pin: pin);
+    await _store.savePin(pin);
+    await _setPlaces([
+      ...state.places,
+      Place(
+        id: 'place-${DateTime.now().microsecondsSinceEpoch}',
+        pin: pin,
+        group: group,
+      ),
+    ]);
+  }
+
+  Future<void> editPlace(String id, String name, PlaceGroup group) async {
+    final target = state.places.firstWhere((p) => p.id == id);
+    if (state.pin.latitude == target.pin.latitude &&
+        state.pin.longitude == target.pin.longitude) {
+      final pin = state.pin.copyWith(label: name);
+      state = state.copyWith(pin: pin);
+      await _store.savePin(pin);
+    }
+    await _setPlaces([
+      for (final p in state.places)
+        if (p.id == id)
+          p.copyWith(
+            pin: p.pin.copyWith(label: name),
+            group: group,
+          )
+        else
+          p,
+    ]);
+  }
+
+  Future<void> movePlaceToPin(String id) async {
+    await _setPlaces([
+      for (final p in state.places)
+        if (p.id == id)
+          p.copyWith(
+            pin: GeoPin(
+              latitude: state.pin.latitude,
+              longitude: state.pin.longitude,
+              label: p.pin.label,
+            ),
+          )
+        else
+          p,
+    ]);
+  }
+
+  Future<void> deletePlace(String id) {
+    return _setPlaces([
+      for (final p in state.places)
+        if (p.id != id) p,
+    ]);
+  }
+
+  Future<void> restorePlace(int index, Place place) {
+    final places = [...state.places];
+    places.insert(index.clamp(0, places.length), place);
+    return _setPlaces(places);
+  }
+
+  Future<void> resetPlaces() async {
+    await _store.clearPlaces();
+    state = state.copyWith(places: defaultPlaces());
   }
 
   Future<void> setJitter(double meters) async {

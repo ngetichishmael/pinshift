@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:pinshift/core/geo_pin.dart';
+import 'package:pinshift/core/place.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _pinKey = 'pinshift.last_pin';
@@ -8,6 +9,7 @@ const _jitterKey = 'pinshift.jitter_meters';
 const _accuracyKey = 'pinshift.accuracy_meters';
 const _lastUrlKey = 'pinshift.browser.last_url';
 const _chromeUaKey = 'pinshift.browser.chrome_ua';
+const _placesKey = 'pinshift.places';
 const _spoofHardeningKey = 'pinshift.spoof_hardening';
 
 class PinStore {
@@ -77,5 +79,34 @@ class PinStore {
   Future<void> saveSpoofHardening(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_spoofHardeningKey, enabled);
+  }
+
+  Future<List<Place>?> loadPlaces() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_placesKey);
+    if (raw == null) {
+      return null;
+    }
+    try {
+      return [
+        for (final item in jsonDecode(raw) as List<dynamic>)
+          Place.fromJson(item as Map<String, dynamic>),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> savePlaces(List<Place> places) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _placesKey,
+      jsonEncode([for (final place in places) place.toJson()]),
+    );
+  }
+
+  Future<void> clearPlaces() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_placesKey);
   }
 }

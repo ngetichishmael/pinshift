@@ -1,4 +1,5 @@
 import 'package:pinshift/core/geo_pin.dart';
+import 'package:pinshift/core/place.dart';
 
 /// Confirmed by Ish from Google Maps (Upper Hill / Kilimanjaro Rd).
 /// Source: https://maps.app.goo.gl/nPdHrN4kC2eTQRnAA
@@ -33,3 +34,10 @@ const cityPresets = [
 const workPresets = [jubileeOfficePin, shinraiOfficePin];
 
 const officePresets = [...workPresets, ...cityPresets];
+
+List<Place> defaultPlaces() => [
+  for (final pin in workPresets)
+    Place(id: 'default-${pin.label}', pin: pin, group: PlaceGroup.offices),
+  for (final pin in cityPresets)
+    Place(id: 'default-${pin.label}', pin: pin, group: PlaceGroup.cities),
+];
